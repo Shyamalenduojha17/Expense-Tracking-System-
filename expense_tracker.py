@@ -1,22 +1,42 @@
 from expense import Expense
+import os
 import calendar
 import datetime
+from google.oauth2.service_account import Credentials
+import gspread
 
+# Authenticate using service account JSON
+json_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+creds = Credentials.from_service_account_file(json_path, scopes=[
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+])
+
+# Function to authenticate and open Google Sheet
+def get_sheet():
+    client = gspread.authorize(creds)
+    SHEET_ID = '1MfuLY5V8gAxtZ0_M-_aYEs09ugq_0hQarBgjHDTmySc'  # Replace with your Google Sheet ID
+    sheet = client.open_by_key(SHEET_ID)
+    return sheet
 
 def main():
     print(f"🎯 Running Expense Tracker!")
-    expense_file_path = "expenses.csv"
     budget = 2000
+
+    # Get the Google Sheet
+    sheet = get_sheet()
+
+    # Ensure headers are set up correctly (name, price, category)
+    setup_headers(sheet)
 
     # Get user input for expense.
     expense = get_user_expense()
 
-    # Write their expense to a file.
-    save_expense_to_file(expense, expense_file_path)
+    # Save the expense to Google Sheets.
+    save_expense_to_sheet(expense, sheet)
 
-    # Read file and summarize expenses.
-    summarize_expenses(expense_file_path, budget)
-
+    # Summarize the expenses from Google Sheets.
+    summarize_expenses_from_sheet(sheet, budget)
 
 def get_user_expense():
     print(f"🎯 Getting User Expense")
@@ -47,56 +67,79 @@ def get_user_expense():
         else:
             print("Invalid category. Please try again!")
 
+# Function to ensure headers are set in the sheet
+def setup_headers(sheet):
+    worksheet = sheet.get_worksheet(0)  # Assuming first worksheet
+    headers = worksheet.row_values(1)
+    expected_headers = ['Name', 'Price', 'Category']
 
-def save_expense_to_file(expense: Expense, expense_file_path):
-    print(f"🎯 Saving User Expense: {expense} to {expense_file_path}")
-    with open(expense_file_path, "a", encoding='utf-8') as f:
-        f.write(f"{expense.name},{expense.amount},{expense.category}\n")
+    # Only add headers if they aren't present
+    if headers != expected_headers:
+        worksheet.update('A1', [expected_headers])
 
+# Function to save the expense in a table format in Google Sheet
+def save_expense_to_sheet(expense: Expense, sheet):
+    # Append the new expense to the Google Sheet in the correct columns
+    worksheet = sheet.get_worksheet(0)  # Assuming you are using the first worksheet
+    worksheet.append_row([expense.name, expense.amount, expense.category])
 
-def summarize_expenses(expense_file_path, budget):
-    print(f"🎯 Summarizing User Expense")
-    expenses: list[Expense] = []
-    with open(expense_file_path, "r", encoding='utf-8') as f:
-        lines = f.readlines()
-        for line in lines:
-            expense_name, expense_amount, expense_category = line.strip().split(",")
-            line_expense = Expense(
-                name=expense_name,
-                amount=float(expense_amount),
-                category=expense_category,
-            )
-            expenses.append(line_expense)
+# Function to summarize expenses from Google Sheets
+def summarize_expenses_from_sheet(sheet, budget):
+    worksheet = sheet.get_worksheet(0)
+    expenses = worksheet.get_all_records()  # Fetch all data from the sheet (ignore headers)
 
     amount_by_category = {}
-    for expense in expenses:
-        key = expense.category
-        if key in amount_by_category:
-            amount_by_category[key] += expense.amount
-        else:
-            amount_by_category[key] = expense.amount
+    total_spent = 0
 
+    for expense in expenses:
+        # Check for keys explicitly
+        name = expense.get('Name')
+        amount = expense.get('Price')
+        category = expense.get('Category')
+
+        # Log the entire expense record for debugging
+        print(f"Processing expense record: {expense}")
+
+        # Skip if any data is missing
+        if not name or not amount or not category:
+            print(f"Missing data in expense record: {expense}")
+            continue
+
+        try:
+            total_spent += float(amount)  # Ensure the amount can be converted to float
+        except ValueError:
+            print(f"Invalid amount for expense record: {expense}")
+            continue  # Skip this record if the amount is not valid
+
+        # Group the amount by category
+        if category in amount_by_category:
+            amount_by_category[category] += float(amount)
+        else:
+            amount_by_category[category] = float(amount)
+
+    # Print the summary
     print("Expenses By Category 📈:")
     for key, amount in amount_by_category.items():
         print(f"  {key}: ${amount:.2f}")
 
-    total_spent = sum([x.amount for x in expenses])
     print(f"💵 Total Spent: ${total_spent:.2f}")
 
     remaining_budget = budget - total_spent
     print(f"✅ Budget Remaining: ${remaining_budget:.2f}")
 
+    # Calculate remaining days of the month
     now = datetime.datetime.now()
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     remaining_days = days_in_month - now.day
+    if remaining_days > 0:
+        daily_budget = remaining_budget / remaining_days
+        print(green(f"👉 Budget Per Day: ${daily_budget:.2f}"))
+    else:
+        print("No remaining days in this month.")
 
-    daily_budget = remaining_budget / remaining_days
-    print(green(f"👉 Budget Per Day: ${daily_budget:.2f}"))
-
-
+# Function to add color to text (green)
 def green(text):
     return f"\033[92m{text}\033[0m"
-
 
 if __name__ == "__main__":
     main()
