@@ -87,55 +87,26 @@ def save_expense_to_sheet(expense: Expense, sheet):
 def summarize_expenses_from_sheet(sheet, budget):
     worksheet = sheet.get_worksheet(0)
     expenses = worksheet.get_all_records()  # Fetch all data from the sheet (ignore headers)
+    print(expenses)
 
-    amount_by_category = {}
-    total_spent = 0
+    col_values = worksheet.col_values(2)[1:]  # Assuming there's a header row in row 1
+    numeric_values = [float(value) for value in col_values if value.isnumeric()]
+    print(numeric_values)
 
-    for expense in expenses:
-        # Check for keys explicitly
-        name = expense.get('Name')
-        amount = expense.get('Price')
-        category = expense.get('Category')
 
-        # Log the entire expense record for debugging
-        print(f"Processing expense record: {expense}")
+    total_spent = sum(numeric_values)
+#    amount_by_category = {}
 
-        # Skip if any data is missing
-        if not name or not amount or not category:
-            print(f"Missing data in expense record: {expense}")
-            continue
 
-        try:
-            total_spent += float(amount)  # Ensure the amount can be converted to float
-        except ValueError:
-            print(f"Invalid amount for expense record: {expense}")
-            continue  # Skip this record if the amount is not valid
-
-        # Group the amount by category
-        if category in amount_by_category:
-            amount_by_category[category] += float(amount)
-        else:
-            amount_by_category[category] = float(amount)
-
-    # Print the summary
-    print("Expenses By Category 📈:")
-    for key, amount in amount_by_category.items():
-        print(f"  {key}: ${amount:.2f}")
+# Print the summary
+#    print("Expenses By Category 📈:")
+#    for key, amount in amount_by_category.items():
+#        print(f"  {key}: ${amount:.2f}")
 
     print(f"💵 Total Spent: ${total_spent:.2f}")
 
     remaining_budget = budget - total_spent
     print(f"✅ Budget Remaining: ${remaining_budget:.2f}")
-
-    # Calculate remaining days of the month
-    now = datetime.datetime.now()
-    days_in_month = calendar.monthrange(now.year, now.month)[1]
-    remaining_days = days_in_month - now.day
-    if remaining_days > 0:
-        daily_budget = remaining_budget / remaining_days
-        print(green(f"👉 Budget Per Day: ${daily_budget:.2f}"))
-    else:
-        print("No remaining days in this month.")
 
 # Function to add color to text (green)
 def green(text):
